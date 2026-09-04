@@ -197,7 +197,7 @@ createScriptFunction(script, name)
 1. **并发安全**：Workers 无状态但 `$.cache` 是全局 in-memory 对象，高并发下可能 read-modify-write 竞争
 2. **KV 最终一致性**：KV 读有 60s cacheTtl，写入后可能延迟可见
 3. **上游兼容性**：上游 Sub-Store 更新可能引入 Node-only API，需要构建时通过存根或适配处理
-4. **CPU 时限**：Workers 免费版 10ms CPU / 请求，复杂订阅处理可能超时
+4. **CPU 时限**：Workers 免费版 10ms CPU / 请求，复杂订阅处理可能超时。付费版默认 30s，可用 `wrangler.toml` 的 `limits.cpu_ms` 调至 300000（5 min）。注意这是 **CPU 时间不是墙钟时间**——墙钟时长本身不限，等待慢响应几乎不消耗 CPU；但 subrequest 存在未文档化的 ~90 秒截断，拉取订阅建议自行加 `AbortSignal.timeout()`
 5. **全局状态污染**：`globalThis.__workerEnv` 在并发请求间共享，理论上存在竞态
 6. **Pages 与 Workers 配置不互通**：`wrangler.toml` 的 `[vars]`/`[[kv_namespaces]]` 不影响 Pages 项目，需要在 Cloudflare Dashboard 单独绑定 KV 与设置 `SUB_STORE_FRONTEND_BACKEND_PATH`（建议设为 Pages Secret）。
 7. **`[vars]` 与 Worker Secret 同名冲突**：若同时存在，`wrangler deploy` 会用 `[vars]` 明文覆盖 Secret，破坏 CI Secret 管理流程；只用其中一种。
