@@ -285,6 +285,12 @@ const nodeStubPlugin = {
             'child_process',
             'stream/promises',
             'mime-types',
+            // jsrsasign 必须存根：它在模块加载时（全局作用域）就生成随机数种子，
+            // 而 Workers 禁止在全局作用域生成随机值 / 做异步 IO / 设置定时器，
+            // 真实打包会导致 wrangler deploy 被服务端校验拒绝（code 10021）。
+            // 代价：上游 utils/rs.js 的 generateFingerprint 不可用，节点设
+            // ca-str/ca_str 时会抛错（既存问题，见 codemap 已知风险）。
+            'jsrsasign',
             'fs',
             'path',
             'net',

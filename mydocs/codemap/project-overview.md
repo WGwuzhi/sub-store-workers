@@ -180,7 +180,7 @@ createScriptFunction(script, name)
 | `lodash` | 工具函数 |
 | `ip-address` | IP 地址处理，`^10.3.1`（与上游同版，含 CVE-2026-69192 修复；`^9.x` 接受前导零 IPv4） |
 | `yaml` | YAML 解析（`src/vendor/quickjs-executor.js` 的 content 模式在宿主侧解析/序列化） |
-| `jsrsasign` | 证书指纹计算（上游 `utils/rs.js` 的 `generateFingerprint`，节点设 `ca-str` 时触发）。**未存根、真实打包**，纯 JS 无 Node 内建依赖，代价约 +84 KB gzip |
+| `jsrsasign` | 上游 `utils/rs.js` 用它算证书指纹。**必须存根，不能真实打包**——它在模块加载时（全局作用域）就生成随机数种子，Workers 禁止在全局作用域生成随机值，真实打包会让 `wrangler deploy` 被服务端校验拒绝（`code 10021: Disallowed operation called within global scope`）。注意 esbuild 构建**不会**报错，只有部署时才暴露 |
 | `esbuild` | 构建（dev） |
 | `wrangler` | 部署 CLI（dev） |
 | `mocha` / `chai` / `@babel/*` / `babel-plugin-module-resolver` | 测试（dev），见 3.2.1 |
@@ -201,3 +201,5 @@ createScriptFunction(script, name)
 8. **路径密码不可恢复**：Worker Secret 在 Dashboard 看不到原文，遗忘只能通过 `npm run rotate-secret` 重置。
 9. **`src/index.js` 是上游 `restful/index.js` 的手工 fork**（不是覆盖——它完全不 import 上游那个文件，自己重新注册全部路由）。上游给 `restful/index.js` 新增路由或中间件时，这边会**静默漏掉**；`SUB_STORE_FRONTEND_BACKEND_PATH` 支持 `/` 就是这个机制的第一次实际发作。同步后建议比对两侧的 `register*Routes` 列表（当前两侧各 17 个、一致）。
 10. **本地开发：仓库外的 `node_modules` 会污染裸模块解析**。上游源码里的 `import 'ip-address'` 这类裸模块名，在 `@babel/register` 下沿目录树向上查找，可能命中两个仓库之外的 `node_modules`（不同机器不同结果）。构建侧不受影响（esbuild 用 `nodePaths` 强制解析到本项目），但写测试时要注意，见 3.2.1 的注意事项。
+11. **`ca-str` 证书指纹不可用**：上游 `core/proxy-utils/index.js` 在 `!proxy['tls-fingerprint'] && caStr` 时调 `rs.generateFingerprint(caStr)`，而 `jsrsasign` 在 Workers 下必须存根（见第 7 节），该调用会抛错。上游只用 `$.env.isNode` 守卫了「读 CA 文件」那条路径，**用户直接给节点设 `ca-str`/`ca_str` 字段的路径没有守卫**。要修需在 Workers 侧覆写 `@/utils/rs`，用同步的纯 JS SHA-256 实现（不能用 Web Crypto，`crypto.subtle.digest` 是异步的，而调用点是同步的）。
+12. **存根列表的改动必须实机验证**：`nodeStubPlugin` 的 stubs 列表决定哪些模块被替换成 Proxy 空实现。把某个模块从列表移出改为真实打包时，**esbuild 构建成功不代表能部署** —— Workers 对全局作用域有额外限制（禁止异步 IO、定时器、生成随机值），违规只在 `wrangler deploy` 的服务端校验或 `wrangler dev`（本地 workerd）阶段才暴露。改动存根列表后务必先跑 `npx wrangler dev` 确认能启动。
